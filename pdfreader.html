@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf_viewer.min.css" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root {
+    --bg:        #2D353B;
+    --bg-dim:    #232A2E;
+    --bg-1:      #343F44;
+    --bg-2:      #3D484D;
+    --bg-3:      #475258;
+    --fg:        #D3C6AA;
+    --fg-dim:    #9DA9A0;
+    --accent:    #A7C080;
+    --accent-2:  #83C092;
+    --red:       #E67E80;
+    --yellow:    #DBBC7F;
+    --border:    #4A555B;
+    --shadow:    rgba(0,0,0,0.45);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg-dim);
+    color: var(--fg);
+    font-family: 'Cabin', sans-serif;
+  }
+
+  /* ── TOOLBAR ── */
+  #toolbar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    height: 52px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 16px;
+    box-shadow: 0 2px 12px var(--shadow);
+  }
+
+  #toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+  }
+
+  #toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .wordmark {
+    font-family: 'Cabin', sans-serif;
+    font-size: 13px;
+    font-style: italic;
+    color: var(--accent);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    opacity: 0.85;
+  }
+
+  .divider {
+    width: 1px;
+    height: 22px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+
+  #file-btn {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--fg);
+    font-family: 'Cabin', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+  #file-btn:hover { background: var(--bg-3); border-color: var(--accent); }
+  #file-btn svg { flex-shrink: 0; }
+  #file-input { display: none; }
+
+  #page-info {
+    font-size: 11px;
+    color: var(--fg-dim);
+    white-space: nowrap;
+    min-width: 80px;
+  }
+
+  .toolbar-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px; height: 30px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--fg-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .toolbar-btn:hover { background: var(--bg-3); color: var(--accent); border-color: var(--accent); }
+
+  #zoom-display {
+    font-size: 11px;
+    color: var(--fg-dim);
+    min-width: 38px;
+    text-align: center;
+  }
+
+  /* ── HEADING ── */
+  #doc-heading {
+    position: fixed;
+    top: 52px; left: 0; right: 0;
+    z-index: 90;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 24px 11px;
+    display: none;
+  }
+  #doc-heading.visible { display: block; }
+
+  #doc-title {
+    font-family: 'Cabin', sans-serif;
+    font-size: 15px;
+    color: var(--fg);
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #doc-author {
+    font-family: 'Cabin', sans-serif;
+    font-size: 11px;
+    color: var(--accent);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── MAIN AREA ── */
+  #main {
+    margin-top: 52px;
+    min-height: calc(100vh - 52px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  #main.with-heading { margin-top: 100px; }
+
+  /* ── DROP ZONE ── */
+  #drop-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    width: 100%;
+    min-height: calc(100vh - 52px);
+    padding: 40px;
+    transition: background 0.2s;
+  }
+  #drop-zone.drag-over { background: rgba(167,192,128,0.06); }
+
+  .drop-icon {
+    width: 64px; height: 64px;
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--bg-3);
+    transition: border-color 0.2s, color 0.2s;
+  }
+  #drop-zone.drag-over .drop-icon { border-color: var(--accent); color: var(--accent); }
+
+  .drop-label {
+    font-family: 'Cabin', sans-serif;
+    font-size: 18px;
+    font-style: italic;
+    color: var(--fg-dim);
+  }
+  .drop-sub {
+    font-size: 11px;
+    color: var(--bg-3);
+    margin-top: -8px;
+  }
+
+  .drop-btn {
+    padding: 8px 20px;
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    color: var(--accent);
+    font-family: 'Cabin', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .drop-btn:hover { background: rgba(167,192,128,0.1); }
+
+  /* ── PDF CANVAS AREA ── */
+  #pdf-container {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 24px 60px;
+    gap: 20px;
+    width: 100%;
+  }
+  #pdf-container.visible { display: flex; }
+
+  .pdf-page-wrapper {
+    position: relative;
+    box-shadow: 0 4px 28px var(--shadow), 0 1px 4px rgba(0,0,0,0.3);
+    border-radius: 2px;
+    line-height: 0;
+    border: 1px solid var(--border);
+  }
+
+  .pdf-page-wrapper canvas {
+    display: block;
+    border-radius: 2px;
+  }
+
+  /* text layer sits exactly over the canvas */
+  .textLayer {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    overflow: hidden;
+    opacity: 1;
+    line-height: 1;
+  }
+
+  .textLayer span,
+  .textLayer br {
+    color: transparent;
+    position: absolute;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0% 0%;
+  }
+
+  .textLayer ::selection {
+    background: rgba(167, 192, 128, 0.35);
+    color: transparent;
+  }
+
+  .page-num-badge {
+    position: absolute;
+    bottom: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: var(--bg-3);
+    white-space: nowrap;
+  }
+
+  /* ── LOADING / ERROR ── */
+  #status {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 18px;
+    font-size: 12px;
+    color: var(--fg-dim);
+    display: none;
+    z-index: 200;
+    white-space: nowrap;
+    box-shadow: 0 4px 16px var(--shadow);
+  }
+  #status.visible { display: block; }
+  #status.error { color: var(--red); border-color: var(--red); }
+  #status.loading { color: var(--yellow); border-color: var(--yellow); }
+
+  /* ── METADATA EDIT ── */
+  #meta-edit {
+    display: none;
+    position: fixed;
+    top: 52px; left: 0; right: 0;
+    z-index: 95;
+    background: var(--bg-dim);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    gap: 10px;
+    flex-direction: column;
+  }
+  #meta-edit.visible { display: flex; }
+
+  .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .meta-label {
+    font-size: 10px;
+    color: var(--fg-dim);
+    width: 44px;
+    flex-shrink: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .meta-input {
+    flex: 1;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--fg);
+    font-family: 'Cabin', sans-serif;
+    font-size: 13px;
+    padding: 5px 9px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .meta-input:focus { border-color: var(--accent); }
+  .meta-input::placeholder { color: var(--bg-3); font-style: italic; }
+
+  .meta-save {
+    align-self: flex-end;
+    padding: 5px 14px;
+    background: var(--accent);
+    border: none;
+    border-radius: 3px;
+    color: var(--bg-dim);
+    font-family: 'Cabin', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .meta-save:hover { opacity: 0.85; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg-dim); }
+  ::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border); }
+</style>
+</head>
+<body>
+
+<!-- TOOLBAR -->
+<div id="toolbar">
+  <div id="toolbar-left">
+    <button id="file-btn" onclick="document.getElementById('file-input').click()">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M2 3.5A1.5 1.5 0 013.5 2h4.086a1.5 1.5 0 011.06.44l3.915 3.914A1.5 1.5 0 0113 7.414V13.5A1.5 1.5 0 0111.5 15h-8A1.5 1.5 0 012 13.5v-10z"/>
+        <path d="M7.5 2v4a1 1 0 001 1h4"/>
+      </svg>
+      Open PDF
+    </button>
+    <input type="file" id="file-input" accept=".pdf">
+    <span id="page-info"></span>
+  </div>
+  <div id="toolbar-right">
+    <button class="toolbar-btn" id="btn-zoom-out" title="Zoom out">−</button>
+    <span id="zoom-display">100%</span>
+    <button class="toolbar-btn" id="btn-zoom-in" title="Zoom in">+</button>
+    <div class="divider"></div>
+    <button class="toolbar-btn" id="btn-meta" title="Set title & author" style="font-size:11px; width:auto; padding:0 8px; gap:5px;">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M11.5 1.5l3 3-9 9H2.5v-3l9-9z"/>
+      </svg>
+      label
+    </button>
+  </div>
+</div>
+
+<!-- DOC HEADING -->
+<div id="doc-heading">
+  <div id="doc-title"></div>
+  <div id="doc-author"></div>
+</div>
+
+<!-- META EDIT PANEL -->
+<div id="meta-edit">
+  <div class="meta-row">
+    <span class="meta-label">Title</span>
+    <input class="meta-input" id="input-title" type="text" placeholder="Article or document title">
+  </div>
+  <div class="meta-row">
+    <span class="meta-label">Author</span>
+    <input class="meta-input" id="input-author" type="text" placeholder="Author(s)">
+  </div>
+  <button class="meta-save" id="meta-save-btn">Apply</button>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <!-- DROP ZONE -->
+  <div id="drop-zone">
+    <div class="drop-icon">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="12" y1="12" x2="12" y2="18"/>
+        <polyline points="9 15 12 18 15 15"/>
+      </svg>
+    </div>
+    <p class="drop-label">Drop a PDF here</p>
+    <p class="drop-sub">or use the button above</p>
+    <button class="drop-btn" onclick="document.getElementById('file-input').click()">Browse files</button>
+  </div>
+
+  <!-- PDF PAGES -->
+  <div id="pdf-container"></div>
+</div>
+
+<!-- STATUS -->
+<div id="status"></div>
+
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  let pdfDoc = null;
+  let scale = 1.4;
+  const MIN_SCALE = 0.5, MAX_SCALE = 3.0;
+
+  const dropZone    = document.getElementById('drop-zone');
+  const pdfContainer= document.getElementById('pdf-container');
+  const pageInfo    = document.getElementById('page-info');
+  const zoomDisplay = document.getElementById('zoom-display');
+  const status      = document.getElementById('status');
+  const main        = document.getElementById('main');
+  const docHeading  = document.getElementById('doc-heading');
+  const metaEdit    = document.getElementById('meta-edit');
+
+  // ── file input
+  document.getElementById('file-input').addEventListener('change', e => {
+    if (e.target.files[0]) loadFile(e.target.files[0]);
+  });
+
+  // ── drag & drop
+  document.body.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  document.body.addEventListener('dragleave', e => { if (!e.relatedTarget) dropZone.classList.remove('drag-over'); });
+  document.body.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type === 'application/pdf') loadFile(file);
+    else showStatus('Please drop a PDF file.', 'error');
+  });
+
+  // ── load file
+  function loadFile(file) {
+    const reader = new FileReader();
+    reader.onload = e => loadPDF(e.target.result, file.name);
+    reader.readAsArrayBuffer(file);
+  }
+
+  async function loadPDF(buffer, filename) {
+    showStatus('Loading…', 'loading');
+    pdfContainer.innerHTML = '';
+    pdfContainer.classList.remove('visible');
+    dropZone.style.display = 'none';
+
+    try {
+      pdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise;
+      await renderAll();
+      pageInfo.textContent = `${pdfDoc.numPages} page${pdfDoc.numPages !== 1 ? 's' : ''}`;
+
+      // try to pull title/author from PDF metadata
+      const meta = await pdfDoc.getMetadata().catch(() => null);
+      const info = meta && meta.info ? meta.info : {};
+      const titleVal  = info.Title  || filename.replace(/\.pdf$/i, '');
+      const authorVal = info.Author || '';
+      document.getElementById('input-title').value  = titleVal;
+      document.getElementById('input-author').value = authorVal;
+      applyHeading(titleVal, authorVal);
+
+      pdfContainer.classList.add('visible');
+      hideStatus();
+    } catch(err) {
+      showStatus('Could not load PDF: ' + err.message, 'error');
+      dropZone.style.display = 'flex';
+    }
+  }
+
+  async function renderAll() {
+    pdfContainer.innerHTML = '';
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+      const page     = await pdfDoc.getPage(i);
+      const viewport = page.getViewport({ scale });
+
+      const wrapper  = document.createElement('div');
+      wrapper.className = 'pdf-page-wrapper';
+      wrapper.style.width  = viewport.width  + 'px';
+      wrapper.style.height = viewport.height + 'px';
+
+      // canvas
+      const canvas  = document.createElement('canvas');
+      canvas.width  = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+
+      // text layer
+      const textLayerDiv = document.createElement('div');
+      textLayerDiv.className = 'textLayer';
+      const textContent = await page.getTextContent();
+      pdfjsLib.renderTextLayer({
+        textContentSource: textContent,
+        container: textLayerDiv,
+        viewport,
+        textDivs: []
+      });
+
+      // page number badge
+      const badge = document.createElement('span');
+      badge.className = 'page-num-badge';
+      badge.textContent = i;
+
+      wrapper.appendChild(canvas);
+      wrapper.appendChild(textLayerDiv);
+      wrapper.appendChild(badge);
+      pdfContainer.appendChild(wrapper);
+    }
+  }
+
+  // ── zoom
+  document.getElementById('btn-zoom-in').addEventListener('click', () => adjustZoom(0.15));
+  document.getElementById('btn-zoom-out').addEventListener('click', () => adjustZoom(-0.15));
+
+  async function adjustZoom(delta) {
+    if (!pdfDoc) return;
+    const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale + delta));
+    if (next === scale) return;
+    scale = next;
+    zoomDisplay.textContent = Math.round(scale / 1.4 * 100) + '%';
+    showStatus('Rendering…', 'loading');
+    await renderAll();
+    hideStatus();
+  }
+
+  // ── meta panel
+  document.getElementById('btn-meta').addEventListener('click', () => {
+    metaEdit.classList.toggle('visible');
+    updateMainMargin();
+  });
+
+  document.getElementById('meta-save-btn').addEventListener('click', () => {
+    const t = document.getElementById('input-title').value.trim();
+    const a = document.getElementById('input-author').value.trim();
+    applyHeading(t, a);
+    metaEdit.classList.remove('visible');
+    updateMainMargin();
+  });
+
+  function applyHeading(title, author) {
+    const titleEl  = document.getElementById('doc-title');
+    const authorEl = document.getElementById('doc-author');
+    if (!title && !author) {
+      docHeading.classList.remove('visible');
+    } else {
+      titleEl.textContent  = title;
+      authorEl.textContent = author;
+      authorEl.style.display = author ? 'block' : 'none';
+      docHeading.classList.add('visible');
+    }
+    updateMainMargin();
+  }
+
+  function updateMainMargin() {
+    const headingVisible = docHeading.classList.contains('visible');
+    const metaVisible    = metaEdit.classList.contains('visible');
+    let top = 52;
+    if (headingVisible) top += 48;
+    if (metaVisible)    top += 90;
+    main.style.marginTop = top + 'px';
+  }
+
+  // ── status
+  function showStatus(msg, type='') {
+    status.textContent = msg;
+    status.className   = 'visible' + (type ? ' ' + type : '');
+  }
+  function hideStatus() {
+    setTimeout(() => { status.className = ''; }, 600);
+  }
+</script>
+</body>
+</html>
